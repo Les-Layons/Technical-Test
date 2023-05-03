@@ -1,0 +1,90 @@
+version: '3.9'
+
+networks:
+  layan:
+    driver: bridge
+  default:
+    external:
+      name: bridge
+
+services:
+  server:
+    build:
+      context: docker
+      dockerfile: ./server/Dockerfile
+    container_name: 'test-layan-server'
+    ports:
+      - '8888:80'
+    working_dir: /var/www/html
+    environment:
+      - 'APP_ENV=dev'
+      - 'DATABASE_URL=mysql://root:root@db_server:3306/layan_test?serverVersion=mariadb-10.5.9'
+    volumes:
+      - .:/var/www/html
+      - ./docker/server/apache/sites-enabled:/etc/apache2/sites-enabled
+      - ./docker/server/php/php.ini:/usr/local/etc/php/conf.d/extra-php-config.ini
+    depends_on:
+      db_server:
+        condition: service_healthy
+    networks:
+      - layan
+
+  db_server:
+    image: mariadb:10.5.9
+    container_name: 'test-layan-db'
+    restart: always
+    ports:
+      - '3308:3306'
+    environment:
+      MYSQL_ROOT_PASSWORD: 'root'
+      MYSQL_USER: 'layan_user'
+      MYSQL_PASSWORD: 'layan_pass'
+      MYSQL_DATABASE: 'layan_test'
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./docker/db/mariadb/my.cnf:/etc/mysql/conf.d/my.cnf
+    healthcheck:
+      test: mysqladmin ping -h 127.0.0.1 -u root --password=root
+      interval: 5s
+      retries: 5
+    networks:
+      - layan
+
+  db_admin:
+    image: phpmyadmin/phpmyadmin:5
+    container_name: 'test-layan-db-admin'
+    ports:
+      - '8889:80'
+    environment:
+#      PMA_HOST: 'prod140223.capajoavokrn.eu-west-3.rds.amazonaws.com'
+      PMA_HOST: db_server
+      UPLOAD_LIMIT: 300M
+    depends_on:
+      db_server:
+        condition: service_healthy
+    volumes:
+      - db_admin_data:/var/www/html
+    networks:
+      - layan
+
+###> doctrine/doctrine-bundle ###
+  database:
+    image: postgres:${POSTGRES_VERSION:-15}-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      # You should definitely change the password in production
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-!ChangeMe!}
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+    volumes:
+      - database_data:/var/lib/postgresql/data:rw
+      # You may use a bind-mounted host directory instead, so that it is harder to accidentally remove the volume and lose all your data!
+      # - ./docker/db/data:/var/lib/postgresql/data:rw
+###< doctrine/doctrine-bundle ###
+
+volumes:
+  db_data:
+  db_admin_data:
+
+###> doctrine/doctrine-bundle ###
+  database_data:
+###< doctrine/doctrine-bundle ###
